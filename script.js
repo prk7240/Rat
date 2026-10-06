@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { SkeletonHelper } from 'three';
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8ea0ad);
@@ -54,11 +53,10 @@ const origin = new THREE.AxesHelper(2);
 origin.position.y = 0.01;
 scene.add(origin);
 
-// 플레이어 컨트롤러와 FBX 모델을 분리한다.
-// FBX의 시각적 정면(로컬 -Z)을 그대로 플레이어의 앞 방향으로 사용한다.
 let player = null;
 let rat = null;
 let mixer = null;
+let sourceClip = null;
 let clips = [];
 const actions = new Map();
 let currentAction = null;
@@ -73,25 +71,27 @@ const forward = new THREE.Vector3();
 const right = new THREE.Vector3();
 const localInput = new THREE.Vector3();
 const cameraTarget = new THREE.Vector3();
-let verticalVelocity = 0;
+
 let grounded = true;
 let movementState = 'idle';
+let jumpElapsed = 0;
 let lastTime = performance.now();
 let frameCounter = 0;
 let fpsTime = performance.now();
 
 const MOVE_SPEED = 2.5;
-const RUN_SPEED = 5.0;
-const GRAVITY = 11;
-const JUMP_SPEED = 5.0;
-const STATE_FADE = 0.12;
+const RUN_SPEED = 4.5;
+const STATE_FADE = 0.10;
+const ANIMATION_FPS = 30;
 
-// 행동별 연결된 clip index. -1은 애니메이션 없음.
-const stateAnimation = {
-  idle: -1,
-  walk: -1,
-  jump: -1,
-  run: -1
+// rat.fbx를 분석한 결과.
+// 40~80  : Walk  - 네 다리가 대각선으로 교차하는 보행 구간
+// 80~120  : Idle  - 다리는 정지하고 척추/머리/꼬리가 미세하게 움직이는 구간
+// 240~270 : Jump  - Root 높이가 크게 상승했다가 착지하는 구간
+const SOURCE_RANGES = {
+  walk: { start: 40, end: 78 },
+  idle: { start: 82, end: 117 },
+  jump: { start: 240, end: 270 }
 };
 
 const $ = (id) => document.getElementById(id);
@@ -109,66 +109,49 @@ function hasKey(code) {
   return keys.has(code);
 }
 
-function setupStateSelect(selectId) {
-  const select = $(selectId);
+function setRangeInfo() {
+  const fps = ANIMATION_FPS;
+  $('idleRange').textContent = `${SOURCE_RANGES.idle.start}–${SOURCE_RANGES.idle.end}F (${((SOURCE_RANGES.idle.end - SOURCE_RANGES.idle.start) / fps).toFixed(2)}s)`;
+  $('walkRange').textContent = `${SOURCE_RANGES.walk.start}–${SOURCE_RANGES.walk.end}F (${((SOURCE_RANGES.walk.end - SOURCE_RANGES.walk.start) / fps).toFixed(2)}s)`;
+  $('jumpRange').textContent = `${SOURCE_RANGES.jump.start}–${SOURCE_RANGES.jump.end}F (${((SOURCE_RANGES.jump.end - SOURCE_RANGES.jump.start) / fps).toFixed(2)}s)`;
+}
+
+function createSeparatedClips(source) {
+  const make = (name, range) => {
+    const clip = THREE.AnimationUtils.subclip(
+      source,
+      name,
+      range.start,
+      range.end,
+      ANIMATION_FPS
+    );
+    // Subclip으로 잘라낸 클립은 시작 시간을 0부터 사용한다.
+    clip.resetDuration();
+    return clip;
+  };
+
+  return [
+    make('Rat_Idle', SOURCE_RANGES.idle),
+    make('Rat_Walk', SOURCE_RANGES.walk),
+    make('Rat_Jump', SOURCE_RANGES.jump)
+  ];
+}
+
+function updateAnimationList() {
+  const select = $('animationSelect');
   select.innerHTML = '';
-  const none = document.createElement('option');
-  none.value = '-1';
-  none.textContent = '없음 (Bind Pose)';
-  select.appendChild(none);
 
   clips.forEach((clip, index) => {
     const option = document.createElement('option');
     option.value = String(index);
-    option.textContent = `${index}: ${clip.name || `Clip ${index}`} (${clip.duration.toFixed(2)}s)`;
+    option.textContent = `${index}: ${clip.name} (${clip.duration.toFixed(2)}s)`;
     select.appendChild(option);
   });
-  return select;
-}
 
-function findClipIndex(patterns) {
-  for (const pattern of patterns) {
-    const index = clips.findIndex((clip) => pattern.test((clip.name || '').toLowerCase()));
-    if (index >= 0) return index;
-  }
-  return -1;
-}
-
-function configureAnimationMapping() {
-  stateAnimation.idle = findClipIndex([/idle/, /stand/, /breath/, /rest/]);
-  stateAnimation.walk = findClipIndex([/walk/, /move/, /locomotion/]);
-  stateAnimation.run = findClipIndex([/run/, /sprint/]);
-  stateAnimation.jump = findClipIndex([/jump/, /leap/, /hop/]);
-
-  const idleSelect = setupStateSelect('idleSelect');
-  const walkSelect = setupStateSelect('walkSelect');
-  const jumpSelect = setupStateSelect('jumpSelect');
-
-  idleSelect.value = String(stateAnimation.idle);
-  walkSelect.value = String(stateAnimation.walk >= 0 ? stateAnimation.walk : stateAnimation.run);
-  jumpSelect.value = String(stateAnimation.jump);
-
-  // 사용자가 상태별 애니메이션을 직접 지정할 수 있다.
-  idleSelect.addEventListener('change', () => {
-    stateAnimation.idle = Number(idleSelect.value);
-    if (movementState === 'idle') updateAnimationState(true);
-  });
-  walkSelect.addEventListener('change', () => {
-    stateAnimation.walk = Number(walkSelect.value);
-    if (movementState === 'walk' || movementState === 'run') updateAnimationState(true);
-  });
-  jumpSelect.addEventListener('change', () => {
-    stateAnimation.jump = Number(jumpSelect.value);
-    if (movementState === 'jump') updateAnimationState(true);
-  });
-
-  const hasEnoughNamedStates = stateAnimation.idle >= 0 && stateAnimation.walk >= 0 && stateAnimation.jump >= 0;
-  if (!hasEnoughNamedStates) {
-    console.warn(
-      'FBX에서 Idle/Walk/Jump용 별도 클립을 모두 찾지 못했습니다. ' +
-      '현재 파일에 Take 001 하나만 있다면 FBX 내부의 동작을 자동으로 나눌 수 없습니다.'
-    );
-  }
+  $('clipCount').textContent = String(clips.length);
+  select.disabled = clips.length === 0;
+  $('playButton').disabled = clips.length === 0;
+  $('stopButton').disabled = clips.length === 0;
 }
 
 function prepareModel(object) {
@@ -192,17 +175,12 @@ function prepareModel(object) {
     }
   });
 
-  // 모델 높이를 2.2 기준으로 맞춘다.
   const box = new THREE.Box3().setFromObject(rat);
   const size = new THREE.Vector3();
   box.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z);
-  if (maxDim > 0) {
-    const modelScale = 2.2 / maxDim;
-    rat.scale.setScalar(modelScale);
-  }
+  if (maxDim > 0) rat.scale.setScalar(2.2 / maxDim);
 
-  // 스케일 적용 후 모델 발밑이 y=0이 되도록 조정한다.
   const scaledBox = new THREE.Box3().setFromObject(rat);
   rat.position.y -= scaledBox.min.y;
 
@@ -212,17 +190,18 @@ function prepareModel(object) {
   });
   $('boneCount').textContent = String(skeletonCount);
 
-  skeletonHelper = new SkeletonHelper(rat);
+  skeletonHelper = new THREE.SkeletonHelper(rat);
   skeletonHelper.visible = false;
   scene.add(skeletonHelper);
 
-  // 이 축은 FBX의 실제 로컬축을 직접 확인하기 위한 용도다.
-  modelAxes = new THREE.AxesHelper(Math.max(0.5, 1.3));
+  modelAxes = new THREE.AxesHelper(1.3);
   modelAxes.visible = false;
   rat.add(modelAxes);
 
-  player.position.set(0, 0, 0);
+  // 중요: FBX 내부에서 Head_CTRL가 Root_CTRL의 +Z 쪽에 있으므로
+  // 이 모델의 실제 정면은 로컬 +Z다. Three.js의 기본 -Z 전진축을 사용하지 않는다.
   player.rotation.y = 0;
+  player.position.set(0, 0, 0);
 
   const center = new THREE.Vector3();
   new THREE.Box3().setFromObject(player).getCenter(center);
@@ -232,48 +211,36 @@ function prepareModel(object) {
 }
 
 function setupAnimations(object) {
-  clips = Array.isArray(object.animations) ? object.animations : [];
+  sourceClip = Array.isArray(object.animations) ? object.animations[0] : null;
   mixer = new THREE.AnimationMixer(object);
 
-  $('clipCount').textContent = String(clips.length);
+  if (!sourceClip) {
+    clips = [];
+    updateAnimationList();
+    $('currentAnimation').textContent = '애니메이션 없음';
+    return;
+  }
 
-  const select = $('animationSelect');
-  select.innerHTML = '';
-  clips.forEach((clip, index) => {
-    const option = document.createElement('option');
-    option.value = String(index);
-    option.textContent = `${index}: ${clip.name || `Clip ${index}`} (${clip.duration.toFixed(2)}s)`;
-    select.appendChild(option);
-  });
+  // Take 001 하나를 실제 동작 구간별로 분리한다.
+  clips = createSeparatedClips(sourceClip);
+  updateAnimationList();
+  $('sourceAnimation').textContent = `${sourceClip.name || 'Take 001'} · ${sourceClip.duration.toFixed(2)}s`;
 
   clips.forEach((clip, index) => {
     const action = mixer.clipAction(clip);
     action.enabled = true;
     action.setEffectiveWeight(0);
-    action.loop = THREE.LoopRepeat;
-    action.clampWhenFinished = false;
     action.stop();
     actions.set(index, action);
   });
 
-  $('animationSelect').disabled = clips.length === 0;
-  $('playButton').disabled = clips.length === 0;
-  $('stopButton').disabled = clips.length === 0;
-  $('resetButton').disabled = false;
-
-  configureAnimationMapping();
+  // 사용자 입력이 없어도 "가만히 있음" 상태에서는 Idle만 재생한다.
   movementState = 'idle';
+  grounded = true;
   updateAnimationState(true);
-
-  if (clips.length === 1 && stateAnimation.idle < 0 && stateAnimation.walk < 0 && stateAnimation.jump < 0) {
-    $('currentAnimation').textContent = '자동 재생 없음: 행동별 클립 지정 필요';
-  } else if (!clips.length) {
-    $('currentAnimation').textContent = '애니메이션 클립 없음';
-  }
 }
 
 function fadeToAction(index, loopMode = THREE.LoopRepeat, reset = true) {
-  // index가 -1이면 모든 자동 애니메이션을 멈춘다.
   if (index < 0 || !actions.has(index)) {
     actions.forEach((action) => action.stop());
     currentAction = null;
@@ -285,52 +252,44 @@ function fadeToAction(index, loopMode = THREE.LoopRepeat, reset = true) {
   const next = actions.get(index);
   if (currentAction === next && !reset) return;
 
-  if (currentAction && currentAction !== next) {
-    currentAction.fadeOut(STATE_FADE);
-  }
+  if (currentAction && currentAction !== next) currentAction.fadeOut(STATE_FADE);
 
   next.enabled = true;
   next.setLoop(loopMode, loopMode === THREE.LoopOnce ? 1 : Infinity);
   next.clampWhenFinished = loopMode === THREE.LoopOnce;
+
   if (reset) next.reset();
+  next.setEffectiveWeight(1);
   next.fadeIn(STATE_FADE).play();
 
   currentAction = next;
   currentAnimationIndex = index;
   $('currentAnimation').textContent = clips[index]?.name || `Clip ${index}`;
+
+  if (loopMode === THREE.LoopOnce) {
+    jumpElapsed = 0;
+  }
 }
 
 function updateAnimationState(force = false) {
-  if (!mixer || !clips.length || !player) return;
+  if (!mixer || !player || clips.length < 3) return;
 
   const moving = desiredDirection.lengthSq() > 0.0001;
-  const running = moving && (hasKey('ShiftLeft') || hasKey('ShiftRight')) && stateAnimation.run >= 0;
-  const nextState = !grounded ? 'jump' : (running ? 'run' : (moving ? 'walk' : 'idle'));
+  const nextState = !grounded ? 'jump' : (moving ? 'walk' : 'idle');
 
   if (!force && nextState === movementState) return;
   movementState = nextState;
 
-  let index = -1;
-  let label = '대기';
-  let loopMode = THREE.LoopRepeat;
-
   if (nextState === 'idle') {
-    index = stateAnimation.idle;
-    label = '대기';
+    $('movementState').textContent = '대기';
+    fadeToAction(0, THREE.LoopRepeat, true);
   } else if (nextState === 'walk') {
-    index = stateAnimation.walk;
-    label = '걷기';
-  } else if (nextState === 'run') {
-    index = stateAnimation.run >= 0 ? stateAnimation.run : stateAnimation.walk;
-    label = '달리기';
-  } else if (nextState === 'jump') {
-    index = stateAnimation.jump;
-    label = '점프';
-    loopMode = THREE.LoopOnce;
+    $('movementState').textContent = hasKey('ShiftLeft') || hasKey('ShiftRight') ? '걷기 · 빠르게' : '걷기';
+    fadeToAction(1, THREE.LoopRepeat, true);
+  } else {
+    $('movementState').textContent = '점프';
+    fadeToAction(2, THREE.LoopOnce, true);
   }
-
-  $('movementState').textContent = label;
-  fadeToAction(index, loopMode, true);
 }
 
 function stopAnimation() {
@@ -346,8 +305,8 @@ function resetModel() {
   player.rotation.set(0, 0, 0);
   velocity.set(0, 0, 0);
   desiredDirection.set(0, 0, 0);
-  verticalVelocity = 0;
   grounded = true;
+  jumpElapsed = 0;
   movementState = 'idle';
 
   actions.forEach((action) => action.stop());
@@ -362,10 +321,10 @@ function updateMovement(dt) {
   const forwardInput = (hasKey('KeyW') ? 1 : 0) - (hasKey('KeyS') ? 1 : 0);
   const strafeInput = (hasKey('KeyD') ? 1 : 0) - (hasKey('KeyA') ? 1 : 0);
 
-  // 핵심 수정:
-  // 키 입력을 월드 X/Z에 직접 대입하지 않고, 플레이어의 로컬 축으로 변환한다.
-  // Three.js의 getWorldDirection()은 로컬 -Z를 바라보므로 FBX의 정면과 일치한다.
-  player.getWorldDirection(forward);
+  // FBX의 실제 정면은 로컬 +Z.
+  // W = 모델 정면(+Z), S = 모델 후면(-Z)
+  // D = 모델 오른쪽(+X), A = 모델 왼쪽(-X)
+  forward.set(0, 0, 1).applyQuaternion(player.quaternion);
   forward.y = 0;
   forward.normalize();
 
@@ -376,26 +335,24 @@ function updateMovement(dt) {
   localInput.set(0, 0, 0);
   localInput.addScaledVector(forward, forwardInput);
   localInput.addScaledVector(right, strafeInput);
-
   if (localInput.lengthSq() > 1) localInput.normalize();
   desiredDirection.copy(localInput);
 
-  const speed = (hasKey('ShiftLeft') || hasKey('ShiftRight')) ? RUN_SPEED : MOVE_SPEED;
+  const fast = hasKey('ShiftLeft') || hasKey('ShiftRight');
+  const speed = fast ? RUN_SPEED : MOVE_SPEED;
   const targetVelocity = desiredDirection.clone().multiplyScalar(speed);
   velocity.lerp(targetVelocity, 1 - Math.exp(-12 * dt));
-
   player.position.addScaledVector(velocity, dt);
 
-  // 모델의 정면 방향은 유지한다.
-  // WASD가 모델의 로컬축을 따르므로, 월드 축과 모델 축이 달라도 이동 방향이 어긋나지 않는다.
-
+  // Jump 클립 자체에 Root의 상승/하강 키가 들어있기 때문에
+  // 이 테스트에서는 별도의 Y 물리를 적용하지 않는다.
   if (!grounded) {
-    verticalVelocity -= GRAVITY * dt;
-    player.position.y += verticalVelocity * dt;
-    if (player.position.y <= 0) {
-      player.position.y = 0;
-      verticalVelocity = 0;
+    jumpElapsed += dt;
+    const jumpDuration = clips[2]?.duration || 1;
+    if (jumpElapsed >= jumpDuration) {
       grounded = true;
+      jumpElapsed = 0;
+      updateAnimationState(true);
     }
   }
 
@@ -430,14 +387,18 @@ function animate() {
 }
 
 window.addEventListener('keydown', (event) => {
-  if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','Space'].includes(event.code)) {
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'Space'].includes(event.code)) {
     event.preventDefault();
   }
+
+  const wasDown = keys.has(event.code);
   keys.add(event.code);
 
-  if (event.code === 'Space' && grounded) {
-    verticalVelocity = JUMP_SPEED;
+  // Space는 최초 입력 순간에만 점프를 시작한다.
+  if (event.code === 'Space' && !wasDown && grounded && clips.length >= 3) {
     grounded = false;
+    jumpElapsed = 0;
+    desiredDirection.set(0, 0, 0);
     updateAnimationState(true);
   }
 });
@@ -447,7 +408,7 @@ window.addEventListener('blur', () => keys.clear());
 
 $('playButton').addEventListener('click', () => {
   const index = Number($('animationSelect').value || 0);
-  fadeToAction(index, THREE.LoopRepeat, true);
+  fadeToAction(index, index === 2 ? THREE.LoopOnce : THREE.LoopRepeat, true);
 });
 $('stopButton').addEventListener('click', stopAnimation);
 $('resetButton').addEventListener('click', resetModel);
@@ -464,6 +425,8 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+setRangeInfo();
+
 const loader = new FBXLoader();
 loader.load(
   './rat.fbx',
@@ -478,9 +441,7 @@ loader.load(
     }
   },
   (xhr) => {
-    if (xhr.total) {
-      $('modelStatus').textContent = `${Math.round((xhr.loaded / xhr.total) * 100)}%`;
-    }
+    if (xhr.total) $('modelStatus').textContent = `${Math.round((xhr.loaded / xhr.total) * 100)}%`;
   },
   (e) => {
     setError(

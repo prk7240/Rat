@@ -1,5 +1,4 @@
 * { box-sizing: border-box; }
-
 html, body {
   margin: 0;
   width: 100%;
@@ -9,35 +8,21 @@ html, body {
   background: #111;
   color: #fff;
 }
-
 #app { width: 100%; height: 100%; position: relative; }
 canvas { display: block; width: 100%; height: 100%; }
-
 #hud {
   position: fixed;
   top: 16px;
   left: 16px;
   z-index: 10;
-  width: min(420px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   padding-right: 3px;
   pointer-events: none;
 }
-
-.title {
-  font-size: 22px;
-  font-weight: 800;
-  margin-bottom: 4px;
-  text-shadow: 0 2px 8px #000;
-}
-.sub {
-  font-size: 12px;
-  opacity: .9;
-  margin-bottom: 10px;
-  text-shadow: 0 2px 8px #000;
-}
-
+.title { font-size: 22px; font-weight: 800; margin-bottom: 4px; text-shadow: 0 2px 8px #000; }
+.sub { font-size: 12px; opacity: .9; margin-bottom: 10px; line-height: 1.4; text-shadow: 0 2px 8px #000; }
 .panel {
   background: rgba(15, 18, 24, .84);
   border: 1px solid rgba(255,255,255,.12);
@@ -48,11 +33,9 @@ canvas { display: block; width: 100%; height: 100%; }
   backdrop-filter: blur(8px);
   pointer-events: auto;
 }
-
-.panelTitle { font-size: 13px; font-weight: 800; margin-bottom: 6px; }
-.hint { font-size: 11px; line-height: 1.45; opacity: .7; margin-bottom: 8px; }
-
-.row, .stateRow {
+.panelTitle { font-size: 13px; font-weight: 800; margin-bottom: 7px; }
+.hint { font-size: 11px; line-height: 1.5; opacity: .7; margin-top: 8px; }
+.row, .rangeRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -60,12 +43,9 @@ canvas { display: block; width: 100%; height: 100%; }
   padding: 4px 0;
   font-size: 12px;
 }
-.row span, .stateRow span { opacity: .7; }
-.row b { font-weight: 700; text-align: right; }
-
-.stateRow + .stateRow { border-top: 1px solid rgba(255,255,255,.06); }
-.stateRow select { flex: 1; width: 180px; margin: 0; }
-
+.row span, .rangeRow span { opacity: .7; }
+.row b, .rangeRow b { font-weight: 700; text-align: right; }
+.rangeRow + .rangeRow { border-top: 1px solid rgba(255,255,255,.06); }
 select, button {
   border: 1px solid rgba(255,255,255,.16);
   border-radius: 7px;
@@ -80,7 +60,6 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .45; }
 .controls label { display: block; font-size: 12px; margin-bottom: 6px; }
 .check { display: flex !important; align-items: center; gap: 6px; user-select: none; }
 .check input { margin: 0; }
-
 #loading {
   position: fixed;
   z-index: 20;
@@ -107,7 +86,6 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .45; }
   line-height: 1.55;
 }
 .hidden { display: none !important; }
-
 #crosshair {
   position: fixed;
   left: 50%;
