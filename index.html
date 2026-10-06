@@ -10,26 +10,50 @@
   <div id="app">
     <div id="hud">
       <div class="title">Rat FBX WebGL Test</div>
-      <div class="sub">WASD 이동 · Shift 달리기 · Space 점프 · 마우스 드래그 카메라</div>
+      <div class="sub">WASD: 모델 기준 이동 · Space: 점프 · Shift: 달리기</div>
 
       <div class="panel">
         <div class="row"><span>모델</span><b id="modelStatus">불러오는 중...</b></div>
         <div class="row"><span>Animation Clips</span><b id="clipCount">0</b></div>
+        <div class="row"><span>현재 상태</span><b id="movementState">대기</b></div>
         <div class="row"><span>현재 애니메이션</span><b id="currentAnimation">없음</b></div>
         <div class="row"><span>Bone 수</span><b id="boneCount">0</b></div>
         <div class="row"><span>FPS</span><b id="fps">0</b></div>
       </div>
 
+      <div class="panel statePanel">
+        <div class="panelTitle">행동별 애니메이션 매핑</div>
+        <div class="hint">이름에 Idle / Walk / Jump가 있으면 자동 선택됩니다. 현재 파일처럼 클립이 1개라면 직접 지정하세요.</div>
+        <div class="stateRow">
+          <span>가만히 있을 때</span>
+          <select id="idleSelect"></select>
+        </div>
+        <div class="stateRow">
+          <span>걸을 때</span>
+          <select id="walkSelect"></select>
+        </div>
+        <div class="stateRow">
+          <span>점프할 때</span>
+          <select id="jumpSelect"></select>
+        </div>
+      </div>
+
       <div class="panel controls">
-        <label for="animationSelect">재생할 애니메이션</label>
+        <div class="panelTitle">수동 애니메이션 검사</div>
+        <label for="animationSelect">검사할 애니메이션</label>
         <select id="animationSelect" disabled></select>
         <div class="buttonRow">
           <button id="playButton" disabled>▶ 재생</button>
           <button id="stopButton" disabled>■ 정지</button>
-          <button id="resetButton" disabled>↺ 초기화</button>
+          <button id="resetButton" disabled>↺ 리셋</button>
         </div>
         <label class="check"><input id="skeletonToggle" type="checkbox" /> 본 구조 표시</label>
-        <label class="check"><input id="axesToggle" type="checkbox" /> 모델 축 표시</label>
+        <label class="check"><input id="axesToggle" type="checkbox" /> 모델 로컬축 표시</label>
+      </div>
+
+      <div class="panel notePanel">
+        <div class="panelTitle">이동 기준</div>
+        <div class="hint">W/S는 쥐의 앞/뒤, A/D는 쥐의 왼쪽/오른쪽을 기준으로 움직입니다. 월드 X/Z 축에 고정된 WASD가 아닙니다.</div>
       </div>
     </div>
 

@@ -10,24 +10,18 @@ html, body {
   color: #fff;
 }
 
-#app {
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
-
-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
+#app { width: 100%; height: 100%; position: relative; }
+canvas { display: block; width: 100%; height: 100%; }
 
 #hud {
   position: fixed;
   top: 16px;
   left: 16px;
   z-index: 10;
-  width: min(360px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding-right: 3px;
   pointer-events: none;
 }
 
@@ -37,7 +31,6 @@ canvas {
   margin-bottom: 4px;
   text-shadow: 0 2px 8px #000;
 }
-
 .sub {
   font-size: 12px;
   opacity: .9;
@@ -46,7 +39,7 @@ canvas {
 }
 
 .panel {
-  background: rgba(15, 18, 24, .82);
+  background: rgba(15, 18, 24, .84);
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 10px;
   padding: 10px;
@@ -56,58 +49,36 @@ canvas {
   pointer-events: auto;
 }
 
-.row {
+.panelTitle { font-size: 13px; font-weight: 800; margin-bottom: 6px; }
+.hint { font-size: 11px; line-height: 1.45; opacity: .7; margin-bottom: 8px; }
+
+.row, .stateRow {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 14px;
   padding: 4px 0;
   font-size: 12px;
 }
-
-.row span { opacity: .7; }
+.row span, .stateRow span { opacity: .7; }
 .row b { font-weight: 700; text-align: right; }
 
-.controls label {
-  display: block;
-  font-size: 12px;
-  margin-bottom: 6px;
-}
+.stateRow + .stateRow { border-top: 1px solid rgba(255,255,255,.06); }
+.stateRow select { flex: 1; width: 180px; margin: 0; }
 
 select, button {
-  width: 100%;
   border: 1px solid rgba(255,255,255,.16);
   border-radius: 7px;
   background: #202630;
   color: #fff;
   padding: 8px 10px;
 }
-
-select { margin-bottom: 8px; }
-
-button {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-button:disabled, select:disabled {
-  cursor: not-allowed;
-  opacity: .45;
-}
-
-.buttonRow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.check {
-  display: flex !important;
-  align-items: center;
-  gap: 6px;
-  user-select: none;
-}
-
+select { width: 100%; margin-bottom: 8px; }
+button { cursor: pointer; font-weight: 700; width: 100%; }
+button:disabled, select:disabled { cursor: not-allowed; opacity: .45; }
+.buttonRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+.controls label { display: block; font-size: 12px; margin-bottom: 6px; }
+.check { display: flex !important; align-items: center; gap: 6px; user-select: none; }
 .check input { margin: 0; }
 
 #loading {
@@ -119,7 +90,6 @@ button:disabled, select:disabled {
   font-size: 18px;
   background: rgba(0,0,0,.55);
 }
-
 #error {
   position: fixed;
   z-index: 30;
@@ -136,7 +106,6 @@ button:disabled, select:disabled {
   font-size: 13px;
   line-height: 1.55;
 }
-
 .hidden { display: none !important; }
 
 #crosshair {
@@ -149,7 +118,6 @@ button:disabled, select:disabled {
   opacity: .25;
   pointer-events: none;
 }
-
 #crosshair span:nth-child(1), #crosshair span:nth-child(2) {
   position: absolute;
   left: 50%; top: 50%;
