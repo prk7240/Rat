@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rat FBX WebGL 리깅/애니메이션 테스트</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="hud">
+      <div class="title">Rat FBX WebGL Test</div>
+      <div class="sub">WASD 이동 · Shift 달리기 · Space 점프 · 마우스 드래그 카메라</div>
+
+      <div class="panel">
+        <div class="row"><span>모델</span><b id="modelStatus">불러오는 중...</b></div>
+        <div class="row"><span>Animation Clips</span><b id="clipCount">0</b></div>
+        <div class="row"><span>현재 애니메이션</span><b id="currentAnimation">없음</b></div>
+        <div class="row"><span>Bone 수</span><b id="boneCount">0</b></div>
+        <div class="row"><span>FPS</span><b id="fps">0</b></div>
+      </div>
+
+      <div class="panel controls">
+        <label for="animationSelect">재생할 애니메이션</label>
+        <select id="animationSelect" disabled></select>
+        <div class="buttonRow">
+          <button id="playButton" disabled>▶ 재생</button>
+          <button id="stopButton" disabled>■ 정지</button>
+          <button id="resetButton" disabled>↺ 초기화</button>
+        </div>
+        <label class="check"><input id="skeletonToggle" type="checkbox" /> 본 구조 표시</label>
+        <label class="check"><input id="axesToggle" type="checkbox" /> 모델 축 표시</label>
+      </div>
+    </div>
+
+    <div id="crosshair"><span></span><span></span></div>
+    <div id="loading">rat.fbx 로딩 중...</div>
+    <div id="error" class="hidden"></div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="script.js"></script>
+</body>
+</html>
