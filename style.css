@@ -104,3 +104,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: .45; }
 }
 #crosshair span:nth-child(1) { width: 14px; height: 1px; }
 #crosshair span:nth-child(2) { width: 1px; height: 14px; }
+
+.keyRow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.keyRow span{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 7px;border-radius:6px;background:#1e252b;color:#aeb8bf;font-weight:700;font-size:12px;border:1px solid #38424a}
+.keyRow span.active{background:#e8edf1;color:#11181d;border-color:#e8edf1}

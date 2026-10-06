@@ -18,13 +18,11 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.target.set(0, 0.9, 0);
+orbit.target.set(0, 1, 0);
 orbit.enableDamping = true;
-orbit.enablePan = false;
 orbit.minDistance = 2;
 orbit.maxDistance = 18;
 orbit.maxPolarAngle = Math.PI * 0.48;
-orbit.enableKeys = false; // 카메라 이동에 키보드를 쓰지 않음
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x53606b, 2.2));
 const sun = new THREE.DirectionalLight(0xffffff, 3.0);
@@ -66,29 +64,30 @@ let currentAnimationIndex = -1;
 let skeletonHelper = null;
 let modelAxes = null;
 
-// -----------------------------
-// 입력 / 플레이어 상태
-// -----------------------------
 const keys = new Set();
-const inputDirection = new THREE.Vector3();
-const moveDirection = new THREE.Vector3();
-const cameraForward = new THREE.Vector3();
-const cameraRight = new THREE.Vector3();
+const velocity = new THREE.Vector3();
+const desiredDirection = new THREE.Vector3();
+const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
+const localInput = new THREE.Vector3();
+const cameraTarget = new THREE.Vector3();
 
 let grounded = true;
 let movementState = 'idle';
-let jumpTimer = 0;
+let jumpElapsed = 0;
 let lastTime = performance.now();
 let frameCounter = 0;
 let fpsTime = performance.now();
 
-const MOVE_SPEED = 2.8;
-const RUN_SPEED = 4.8;
-const ROTATE_SPEED = 16;
-const STATE_FADE = 0.12;
+const MOVE_SPEED = 2.5;
+const RUN_SPEED = 4.5;
+const STATE_FADE = 0.10;
 const ANIMATION_FPS = 30;
 
-// rat.fbx 분석 결과
+// rat.fbx를 분석한 결과.
+// 40~80  : Walk  - 네 다리가 대각선으로 교차하는 보행 구간
+// 80~120  : Idle  - 다리는 정지하고 척추/머리/꼬리가 미세하게 움직이는 구간
+// 240~270 : Jump  - Root 높이가 크게 상승했다가 착지하는 구간
 const SOURCE_RANGES = {
   walk: { start: 40, end: 78 },
   idle: { start: 82, end: 117 },
@@ -110,29 +109,27 @@ function hasKey(code) {
   return keys.has(code);
 }
 
-function updateInputHUD() {
-  $('keyW')?.classList.toggle('active', hasKey('KeyW'));
-  $('keyA')?.classList.toggle('active', hasKey('KeyA'));
-  $('keyS')?.classList.toggle('active', hasKey('KeyS'));
-  $('keyD')?.classList.toggle('active', hasKey('KeyD'));
-  $('keySpace')?.classList.toggle('active', hasKey('Space'));
-}
-
 function setRangeInfo() {
-  $('idleRange').textContent = `${SOURCE_RANGES.idle.start}–${SOURCE_RANGES.idle.end}F (${((SOURCE_RANGES.idle.end - SOURCE_RANGES.idle.start) / ANIMATION_FPS).toFixed(2)}s)`;
-  $('walkRange').textContent = `${SOURCE_RANGES.walk.start}–${SOURCE_RANGES.walk.end}F (${((SOURCE_RANGES.walk.end - SOURCE_RANGES.walk.start) / ANIMATION_FPS).toFixed(2)}s)`;
-  $('jumpRange').textContent = `${SOURCE_RANGES.jump.start}–${SOURCE_RANGES.jump.end}F (${((SOURCE_RANGES.jump.end - SOURCE_RANGES.jump.start) / ANIMATION_FPS).toFixed(2)}s)`;
+  const fps = ANIMATION_FPS;
+  $('idleRange').textContent = `${SOURCE_RANGES.idle.start}–${SOURCE_RANGES.idle.end}F (${((SOURCE_RANGES.idle.end - SOURCE_RANGES.idle.start) / fps).toFixed(2)}s)`;
+  $('walkRange').textContent = `${SOURCE_RANGES.walk.start}–${SOURCE_RANGES.walk.end}F (${((SOURCE_RANGES.walk.end - SOURCE_RANGES.walk.start) / fps).toFixed(2)}s)`;
+  $('jumpRange').textContent = `${SOURCE_RANGES.jump.start}–${SOURCE_RANGES.jump.end}F (${((SOURCE_RANGES.jump.end - SOURCE_RANGES.jump.start) / fps).toFixed(2)}s)`;
 }
 
 function createSeparatedClips(source) {
   const make = (name, range) => {
-    const clip = THREE.AnimationUtils.subclip(source, name, range.start, range.end, ANIMATION_FPS);
+    const clip = THREE.AnimationUtils.subclip(
+      source,
+      name,
+      range.start,
+      range.end,
+      ANIMATION_FPS
+    );
+    // Subclip으로 잘라낸 클립은 시작 시간을 0부터 사용한다.
     clip.resetDuration();
     return clip;
   };
 
-  // 중요: 여기서는 Walk 애니메이션의 다리/몸통 키를 제거하지 않는다.
-  // 실제 이동은 player.position이 담당하고, 애니메이션은 몸을 움직이는 역할을 한다.
   return [
     make('Rat_Idle', SOURCE_RANGES.idle),
     make('Rat_Walk', SOURCE_RANGES.walk),
@@ -158,13 +155,12 @@ function updateAnimationList() {
 }
 
 function prepareModel(object) {
-  // player = 게임에서 실제로 움직이는 컨트롤러
   player = new THREE.Group();
   player.name = 'RatPlayerController';
   scene.add(player);
 
   rat = object;
-  rat.name = 'RatVisual';
+  rat.position.set(0, 0, 0);
   player.add(rat);
 
   rat.traverse((node) => {
@@ -189,7 +185,9 @@ function prepareModel(object) {
   rat.position.y -= scaledBox.min.y;
 
   let skeletonCount = 0;
-  rat.traverse((node) => { if (node.isBone) skeletonCount++; });
+  rat.traverse((node) => {
+    if (node.isBone) skeletonCount++;
+  });
   $('boneCount').textContent = String(skeletonCount);
 
   skeletonHelper = new THREE.SkeletonHelper(rat);
@@ -200,7 +198,8 @@ function prepareModel(object) {
   modelAxes.visible = false;
   rat.add(modelAxes);
 
-  // FBX 분석 결과 실제 정면은 +Z.
+  // 중요: FBX 내부에서 Head_CTRL가 Root_CTRL의 +Z 쪽에 있으므로
+  // 이 모델의 실제 정면은 로컬 +Z다. Three.js의 기본 -Z 전진축을 사용하지 않는다.
   player.rotation.y = 0;
   player.position.set(0, 0, 0);
 
@@ -222,6 +221,7 @@ function setupAnimations(object) {
     return;
   }
 
+  // Take 001 하나를 실제 동작 구간별로 분리한다.
   clips = createSeparatedClips(sourceClip);
   updateAnimationList();
   $('sourceAnimation').textContent = `${sourceClip.name || 'Take 001'} · ${sourceClip.duration.toFixed(2)}s`;
@@ -234,57 +234,61 @@ function setupAnimations(object) {
     actions.set(index, action);
   });
 
-  // 최초 상태: Idle만 자동 재생
+  // 사용자 입력이 없어도 "가만히 있음" 상태에서는 Idle만 재생한다.
   movementState = 'idle';
   grounded = true;
-  setAnimationState(true);
+  updateAnimationState(true);
 }
 
-function playAction(index, loopMode, reset = true) {
-  const next = actions.get(index);
-  if (!next) return;
+function fadeToAction(index, loopMode = THREE.LoopRepeat, reset = true) {
+  if (index < 0 || !actions.has(index)) {
+    actions.forEach((action) => action.stop());
+    currentAction = null;
+    currentAnimationIndex = -1;
+    $('currentAnimation').textContent = '없음 (Bind Pose)';
+    return;
+  }
 
+  const next = actions.get(index);
   if (currentAction === next && !reset) return;
 
-  if (currentAction && currentAction !== next) {
-    currentAction.fadeOut(STATE_FADE);
-  }
+  if (currentAction && currentAction !== next) currentAction.fadeOut(STATE_FADE);
 
   next.enabled = true;
   next.setLoop(loopMode, loopMode === THREE.LoopOnce ? 1 : Infinity);
   next.clampWhenFinished = loopMode === THREE.LoopOnce;
 
   if (reset) next.reset();
-  next.setEffectiveWeight(0);
+  next.setEffectiveWeight(1);
   next.fadeIn(STATE_FADE).play();
 
   currentAction = next;
   currentAnimationIndex = index;
   $('currentAnimation').textContent = clips[index]?.name || `Clip ${index}`;
+
+  if (loopMode === THREE.LoopOnce) {
+    jumpElapsed = 0;
+  }
 }
 
-function inputIsMoving() {
-  return hasKey('KeyW') || hasKey('KeyA') || hasKey('KeyS') || hasKey('KeyD');
-}
+function updateAnimationState(force = false) {
+  if (!mixer || !player || clips.length < 3) return;
 
-function setAnimationState(force = false) {
-  if (!mixer || clips.length < 3) return;
+  const moving = desiredDirection.lengthSq() > 0.0001;
+  const nextState = !grounded ? 'jump' : (moving ? 'walk' : 'idle');
 
-  // Jump가 최우선. 점프 중에도 WASD로 수평 이동은 계속된다.
-  const nextState = !grounded ? 'jump' : (inputIsMoving() ? 'walk' : 'idle');
   if (!force && nextState === movementState) return;
-
   movementState = nextState;
 
   if (nextState === 'idle') {
     $('movementState').textContent = '대기';
-    playAction(0, THREE.LoopRepeat, true);
+    fadeToAction(0, THREE.LoopRepeat, true);
   } else if (nextState === 'walk') {
-    $('movementState').textContent = (hasKey('ShiftLeft') || hasKey('ShiftRight')) ? '걷기 · 빠르게' : '걷기';
-    playAction(1, THREE.LoopRepeat, true);
+    $('movementState').textContent = hasKey('ShiftLeft') || hasKey('ShiftRight') ? '걷기 · 빠르게' : '걷기';
+    fadeToAction(1, THREE.LoopRepeat, true);
   } else {
     $('movementState').textContent = '점프';
-    playAction(2, THREE.LoopOnce, true);
+    fadeToAction(2, THREE.LoopOnce, true);
   }
 }
 
@@ -297,92 +301,90 @@ function stopAnimation() {
 
 function resetModel() {
   if (!player) return;
-
   player.position.set(0, 0, 0);
   player.rotation.set(0, 0, 0);
+  velocity.set(0, 0, 0);
+  desiredDirection.set(0, 0, 0);
   grounded = true;
-  jumpTimer = 0;
+  jumpElapsed = 0;
   movementState = 'idle';
 
   actions.forEach((action) => action.stop());
   currentAction = null;
   currentAnimationIndex = -1;
-  setAnimationState(true);
-}
-
-function updateMoveDirectionFromCamera() {
-  // 카메라 위치와 목표점 사이의 수평 벡터를 이용한다.
-  // OrbitControls가 상하로 기울어져 있어도 이동에는 pitch가 영향을 주지 않는다.
-  cameraForward.copy(orbit.target).sub(camera.position);
-  cameraForward.y = 0;
-
-  if (cameraForward.lengthSq() < 1e-8) {
-    cameraForward.set(0, 0, -1);
-  } else {
-    cameraForward.normalize();
-  }
-
-  // 카메라 기준 오른쪽
-  cameraRight.crossVectors(cameraForward, scene.up).normalize();
-
-  const w = hasKey('KeyW') ? 1 : 0;
-  const s = hasKey('KeyS') ? 1 : 0;
-  const a = hasKey('KeyA') ? 1 : 0;
-  const d = hasKey('KeyD') ? 1 : 0;
-
-  inputDirection.set(d - a, 0, w - s);
-
-  moveDirection.set(0, 0, 0);
-  moveDirection.addScaledVector(cameraForward, inputDirection.z);
-  moveDirection.addScaledVector(cameraRight, inputDirection.x);
-
-  if (moveDirection.lengthSq() > 1e-8) {
-    moveDirection.normalize();
-  }
+  updateAnimationState(true);
 }
 
 function updateMovement(dt) {
   if (!player) return;
 
-  updateMoveDirectionFromCamera();
+  const forwardInput = (hasKey('KeyW') ? 1 : 0) - (hasKey('KeyS') ? 1 : 0);
+  const strafeInput = (hasKey('KeyD') ? 1 : 0) - (hasKey('KeyA') ? 1 : 0);
 
-  // 실제 플레이어 이동
-  if (moveDirection.lengthSq() > 1e-8) {
-    const fast = hasKey('ShiftLeft') || hasKey('ShiftRight');
-    const speed = fast ? RUN_SPEED : MOVE_SPEED;
-    player.position.addScaledVector(moveDirection, speed * dt);
+  // 카메라가 바라보는 "수평 방향"만 사용한다.
+  // getWorldDirection()의 pitch까지 포함하지 않고, 카메라와 orbit target의
+  // 수평 벡터를 직접 계산해 WASD가 항상 카메라 기준으로 움직이도록 한다.
+  camera.getWorldDirection(forward);
+  forward.y = 0;
 
-    // FBX의 정면이 +Z이므로 +Z가 이동 방향을 향하게 한다.
-    const targetYaw = Math.atan2(moveDirection.x, moveDirection.z);
-    player.rotation.y = THREE.MathUtils.dampAngle(player.rotation.y, targetYaw, ROTATE_SPEED, dt);
+  if (forward.lengthSq() < 0.000001) {
+    forward.set(0, 0, -1);
+  } else {
+    forward.normalize();
   }
 
-  // HUD에서 플레이어 실제 위치와 입력 상태를 확인할 수 있다.
-  $('playerPosition').textContent =
-    `${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}, ${player.position.z.toFixed(2)}`;
-  $('movementVector').textContent =
-    `${moveDirection.x.toFixed(2)}, ${moveDirection.z.toFixed(2)}`;
+  // 카메라 오른쪽: forward X worldUp
+  right.crossVectors(forward, scene.up).normalize();
 
+  desiredDirection.set(0, 0, 0);
+  desiredDirection.addScaledVector(forward, forwardInput);
+  desiredDirection.addScaledVector(right, strafeInput);
+
+  if (desiredDirection.lengthSq() > 0.000001) {
+    desiredDirection.normalize();
+
+    // FBX의 실제 정면(+Z)이 이동 방향을 향하도록 회전
+    const targetYaw = Math.atan2(desiredDirection.x, desiredDirection.z);
+    player.rotation.y = THREE.MathUtils.dampAngle(player.rotation.y, targetYaw, 18, dt);
+  }
+
+  const fast = hasKey('ShiftLeft') || hasKey('ShiftRight');
+  const speed = fast ? RUN_SPEED : MOVE_SPEED;
+
+  // 이동 방향을 바로 속도로 만들고, 잔여 속도도 빠르게 감쇠시킨다.
+  const targetVelocity = velocity.copy(desiredDirection).multiplyScalar(speed);
+  if (desiredDirection.lengthSq() < 0.000001) {
+    velocity.multiplyScalar(Math.exp(-16 * dt));
+  }
+
+  player.position.x += velocity.x * dt;
+  player.position.z += velocity.z * dt;
+
+  // 현재 위치를 HUD에 표시해서 입력/이동 여부를 즉시 확인할 수 있게 한다.
+  const pos = player.position;
+  $('playerPosition').textContent = `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`;
+
+  // Jump 클립 자체에 Root 상승/하강 키가 들어 있으므로 별도 Y 물리를 사용하지 않는다.
   if (!grounded) {
-    jumpTimer += dt;
+    jumpElapsed += dt;
     const jumpDuration = clips[2]?.duration || 1;
-    if (jumpTimer >= jumpDuration) {
+    if (jumpElapsed >= jumpDuration) {
       grounded = true;
-      jumpTimer = 0;
-      setAnimationState(true);
+      jumpElapsed = 0;
+      updateAnimationState(true);
     }
   }
 
-  // 이동 입력과 애니메이션 상태는 서로 독립적으로 동시에 작동한다.
-  setAnimationState(false);
+  updateAnimationState(false);
 }
 
 function updateCamera() {
   if (!player) return;
 
-  const target = player.position.clone();
-  target.y += 0.9;
-  orbit.target.lerp(target, 0.18);
+  // player.matrixWorld의 이전 프레임 값을 사용하지 않고 현재 위치를 직접 사용한다.
+  cameraTarget.copy(player.position);
+  cameraTarget.y += 1.0;
+  orbit.target.lerp(cameraTarget, 0.15);
 }
 
 function animate() {
@@ -407,33 +409,28 @@ function animate() {
 }
 
 window.addEventListener('keydown', (event) => {
-  const controlled = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'Space'];
-  if (controlled.includes(event.code)) event.preventDefault();
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'Space'].includes(event.code)) {
+    event.preventDefault();
+  }
 
   const wasDown = keys.has(event.code);
   keys.add(event.code);
-  updateInputHUD();
 
+  // Space는 최초 입력 순간에만 점프를 시작한다.
   if (event.code === 'Space' && !wasDown && grounded && clips.length >= 3) {
     grounded = false;
-    jumpTimer = 0;
-    setAnimationState(true);
+    jumpElapsed = 0;
+    desiredDirection.set(0, 0, 0);
+    updateAnimationState(true);
   }
 });
 
-window.addEventListener('keyup', (event) => {
-  keys.delete(event.code);
-  updateInputHUD();
-});
-
-window.addEventListener('blur', () => {
-  keys.clear();
-  updateInputHUD();
-});
+window.addEventListener('keyup', (event) => keys.delete(event.code));
+window.addEventListener('blur', () => keys.clear());
 
 $('playButton').addEventListener('click', () => {
   const index = Number($('animationSelect').value || 0);
-  playAction(index, index === 2 ? THREE.LoopOnce : THREE.LoopRepeat, true);
+  fadeToAction(index, index === 2 ? THREE.LoopOnce : THREE.LoopRepeat, true);
 });
 $('stopButton').addEventListener('click', stopAnimation);
 $('resetButton').addEventListener('click', resetModel);
@@ -451,7 +448,6 @@ window.addEventListener('resize', () => {
 });
 
 setRangeInfo();
-updateInputHUD();
 
 const loader = new FBXLoader();
 loader.load(
