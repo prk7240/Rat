@@ -321,50 +321,50 @@ function updateMovement(dt) {
   const forwardInput = (hasKey('KeyW') ? 1 : 0) - (hasKey('KeyS') ? 1 : 0);
   const strafeInput = (hasKey('KeyD') ? 1 : 0) - (hasKey('KeyA') ? 1 : 0);
 
-  // 카메라가 바라보는 수평 방향을 기준으로 이동한다.
-  // W = 카메라 정면, S = 카메라 후면, A/D = 카메라 기준 좌/우
+  // 카메라가 바라보는 "수평 방향"만 사용한다.
+  // getWorldDirection()의 pitch까지 포함하지 않고, 카메라와 orbit target의
+  // 수평 벡터를 직접 계산해 WASD가 항상 카메라 기준으로 움직이도록 한다.
   camera.getWorldDirection(forward);
   forward.y = 0;
 
-  // 카메라가 거의 수직으로 내려다보는 상황에서는 수평 전진축이
-  // 0에 가까워질 수 있으므로 안전한 기본 방향을 사용한다.
   if (forward.lengthSq() < 0.000001) {
     forward.set(0, 0, -1);
   } else {
     forward.normalize();
   }
 
-  // forward × up = camera 기준 오른쪽
-  right.crossVectors(forward, scene.up);
-  right.y = 0;
-  right.normalize();
+  // 카메라 오른쪽: forward X worldUp
+  right.crossVectors(forward, scene.up).normalize();
 
-  localInput.set(0, 0, 0);
-  localInput.addScaledVector(forward, forwardInput);
-  localInput.addScaledVector(right, strafeInput);
-  if (localInput.lengthSq() > 1) localInput.normalize();
-  desiredDirection.copy(localInput);
+  desiredDirection.set(0, 0, 0);
+  desiredDirection.addScaledVector(forward, forwardInput);
+  desiredDirection.addScaledVector(right, strafeInput);
 
-  // 모델의 실제 정면(+Z)을 이동 방향에 맞춘다.
-  // 따라서 카메라가 방향을 바꾸면 W를 눌렀을 때 모델도 카메라 전방을 바라본다.
-  if (desiredDirection.lengthSq() > 0.0001) {
+  if (desiredDirection.lengthSq() > 0.000001) {
+    desiredDirection.normalize();
+
+    // FBX의 실제 정면(+Z)이 이동 방향을 향하도록 회전
     const targetYaw = Math.atan2(desiredDirection.x, desiredDirection.z);
-    player.rotation.y = THREE.MathUtils.dampAngle(
-      player.rotation.y,
-      targetYaw,
-      14,
-      dt
-    );
+    player.rotation.y = THREE.MathUtils.dampAngle(player.rotation.y, targetYaw, 18, dt);
   }
 
   const fast = hasKey('ShiftLeft') || hasKey('ShiftRight');
   const speed = fast ? RUN_SPEED : MOVE_SPEED;
-  const targetVelocity = desiredDirection.clone().multiplyScalar(speed);
-  velocity.lerp(targetVelocity, 1 - Math.exp(-12 * dt));
-  player.position.addScaledVector(velocity, dt);
 
-  // Jump 클립 자체에 Root의 상승/하강 키가 들어있기 때문에
-  // 이 테스트에서는 별도의 Y 물리를 적용하지 않는다.
+  // 이동 방향을 바로 속도로 만들고, 잔여 속도도 빠르게 감쇠시킨다.
+  const targetVelocity = velocity.copy(desiredDirection).multiplyScalar(speed);
+  if (desiredDirection.lengthSq() < 0.000001) {
+    velocity.multiplyScalar(Math.exp(-16 * dt));
+  }
+
+  player.position.x += velocity.x * dt;
+  player.position.z += velocity.z * dt;
+
+  // 현재 위치를 HUD에 표시해서 입력/이동 여부를 즉시 확인할 수 있게 한다.
+  const pos = player.position;
+  $('playerPosition').textContent = `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`;
+
+  // Jump 클립 자체에 Root 상승/하강 키가 들어 있으므로 별도 Y 물리를 사용하지 않는다.
   if (!grounded) {
     jumpElapsed += dt;
     const jumpDuration = clips[2]?.duration || 1;
@@ -380,7 +380,10 @@ function updateMovement(dt) {
 
 function updateCamera() {
   if (!player) return;
-  cameraTarget.set(0, 1.0, 0).applyMatrix4(player.matrixWorld);
+
+  // player.matrixWorld의 이전 프레임 값을 사용하지 않고 현재 위치를 직접 사용한다.
+  cameraTarget.copy(player.position);
+  cameraTarget.y += 1.0;
   orbit.target.lerp(cameraTarget, 0.15);
 }
 
