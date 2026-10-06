@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rat FBX WebGL 애니메이션 분리 테스트</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="hud">
+      <div class="title">Rat FBX Animation Test</div>
+      <div class="sub">WASD: 모델 기준 이동 · Space: 점프 · Shift: 빠르게 이동 · 마우스 드래그: 카메라</div>
+
+      <div class="panel">
+        <div class="row"><span>모델</span><b id="modelStatus">불러오는 중...</b></div>
+        <div class="row"><span>원본 애니메이션</span><b id="sourceAnimation">분석 중...</b></div>
+        <div class="row"><span>분리된 클립</span><b id="clipCount">0</b></div>
+        <div class="row"><span>현재 상태</span><b id="movementState">대기</b></div>
+        <div class="row"><span>현재 애니메이션</span><b id="currentAnimation">없음</b></div>
+        <div class="row"><span>Bone 수</span><b id="boneCount">0</b></div>
+        <div class="row"><span>FPS</span><b id="fps">0</b></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">자동 분리 결과</div>
+        <div class="rangeRow"><span>Idle</span><b id="idleRange">-</b></div>
+        <div class="rangeRow"><span>Walk</span><b id="walkRange">-</b></div>
+        <div class="rangeRow"><span>Jump</span><b id="jumpRange">-</b></div>
+        <div class="hint">rat.fbx의 Take 001 하나를 위 프레임 구간으로 잘라 WebGL에서 3개의 AnimationClip으로 사용합니다.</div>
+      </div>
+
+      <div class="panel controls">
+        <div class="panelTitle">수동 애니메이션 검사</div>
+        <select id="animationSelect" disabled></select>
+        <div class="buttonRow">
+          <button id="playButton" disabled>▶ 재생</button>
+          <button id="stopButton" disabled>■ 정지</button>
+          <button id="resetButton">↺ 리셋</button>
+        </div>
+        <label class="check"><input id="skeletonToggle" type="checkbox" /> 본 구조 표시</label>
+        <label class="check"><input id="axesToggle" type="checkbox" /> 모델 로컬축 표시</label>
+      </div>
+
+      <div class="panel notePanel">
+        <div class="panelTitle">모델 방향 보정</div>
+        <div class="hint">FBX 구조 분석에서 Head_CTRL가 Root_CTRL의 +Z 방향에 있으므로 실제 정면을 로컬 +Z로 판정했습니다. 따라서 W는 모델의 머리 방향으로 움직이고 A/D도 모델 기준으로 동작합니다.</div>
+      </div>
+    </div>
+
+    <div id="crosshair"><span></span><span></span></div>
+    <div id="loading">rat.fbx 로딩 중...</div>
+    <div id="error" class="hidden"></div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="script.js"></script>
+</body>
+</html>
