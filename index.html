@@ -10,7 +10,7 @@
   <div id="app">
     <div id="hud">
       <div class="title">Rat FBX Animation Test</div>
-      <div class="sub">WASD: 모델 기준 이동 · Space: 점프 · Shift: 빠르게 이동 · 마우스 드래그: 카메라</div>
+      <div class="sub">WASD: 카메라 기준 이동 · Space: 점프 · Shift: 빠르게 이동 · 마우스 드래그: 카메라</div>
 
       <div class="panel">
         <div class="row"><span>모델</span><b id="modelStatus">불러오는 중...</b></div>
@@ -43,8 +43,8 @@
       </div>
 
       <div class="panel notePanel">
-        <div class="panelTitle">모델 방향 보정</div>
-        <div class="hint">FBX 구조 분석에서 Head_CTRL가 Root_CTRL의 +Z 방향에 있으므로 실제 정면을 로컬 +Z로 판정했습니다. 따라서 W는 모델의 머리 방향으로 움직이고 A/D도 모델 기준으로 동작합니다.</div>
+        <div class="panelTitle">카메라 기준 이동</div>
+        <div class="hint">W는 카메라가 바라보는 수평 정면, S는 후방, A/D는 카메라 기준 좌우로 이동합니다. 이동 방향으로 모델이 부드럽게 회전하며, FBX의 실제 정면(+Z)을 기준으로 맞춥니다.</div>
       </div>
     </div>
 

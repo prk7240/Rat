@@ -321,14 +321,21 @@ function updateMovement(dt) {
   const forwardInput = (hasKey('KeyW') ? 1 : 0) - (hasKey('KeyS') ? 1 : 0);
   const strafeInput = (hasKey('KeyD') ? 1 : 0) - (hasKey('KeyA') ? 1 : 0);
 
-  // FBX의 실제 정면은 로컬 +Z.
-  // W = 모델 정면(+Z), S = 모델 후면(-Z)
-  // D = 모델 오른쪽(+X), A = 모델 왼쪽(-X)
-  forward.set(0, 0, 1).applyQuaternion(player.quaternion);
+  // 카메라가 바라보는 수평 방향을 기준으로 이동한다.
+  // W = 카메라 정면, S = 카메라 후면, A/D = 카메라 기준 좌/우
+  camera.getWorldDirection(forward);
   forward.y = 0;
-  forward.normalize();
 
-  right.set(1, 0, 0).applyQuaternion(player.quaternion);
+  // 카메라가 거의 수직으로 내려다보는 상황에서는 수평 전진축이
+  // 0에 가까워질 수 있으므로 안전한 기본 방향을 사용한다.
+  if (forward.lengthSq() < 0.000001) {
+    forward.set(0, 0, -1);
+  } else {
+    forward.normalize();
+  }
+
+  // forward × up = camera 기준 오른쪽
+  right.crossVectors(forward, scene.up);
   right.y = 0;
   right.normalize();
 
@@ -337,6 +344,18 @@ function updateMovement(dt) {
   localInput.addScaledVector(right, strafeInput);
   if (localInput.lengthSq() > 1) localInput.normalize();
   desiredDirection.copy(localInput);
+
+  // 모델의 실제 정면(+Z)을 이동 방향에 맞춘다.
+  // 따라서 카메라가 방향을 바꾸면 W를 눌렀을 때 모델도 카메라 전방을 바라본다.
+  if (desiredDirection.lengthSq() > 0.0001) {
+    const targetYaw = Math.atan2(desiredDirection.x, desiredDirection.z);
+    player.rotation.y = THREE.MathUtils.dampAngle(
+      player.rotation.y,
+      targetYaw,
+      14,
+      dt
+    );
+  }
 
   const fast = hasKey('ShiftLeft') || hasKey('ShiftRight');
   const speed = fast ? RUN_SPEED : MOVE_SPEED;
